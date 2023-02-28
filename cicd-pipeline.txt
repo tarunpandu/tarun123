@@ -1,0 +1,389 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CF Template for creating the multi stage CodePipeline.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General Stack Details
+        Parameters:
+        - CustomerName
+        - EnvironmentName
+      # - Label:
+      #     default: VPC
+      #   Parameters:
+      #     - VPCID
+      #     - AppSubnet1
+      #     - AppSubnet2
+      - Label:
+          default: Codebuild Details
+        Parameters:
+          - CodeBuildProjectName
+          - CodebuildDescription
+          - ComputeType
+          - BuildEnvironmentType
+          - CodeBuildDockerImage
+          - Privilegedmode
+          - LogTypes
+          - Status
+          - Location
+          - BuildSpecDeploy
+          - CodeBuildServiceRole
+
+      - Label:
+          default: Codepipeline Details
+        Parameters:
+          - CodepipelineName
+          - CodepipelineRoleArn
+          - SourceProvider
+          - CodeCommitRepo
+          - ConnectionArn
+          - FullRepoName
+          - BranchName
+          - ECRDockerRepository
+          - EBStalkApplicationName
+          - EBEnvironmentName
+          - ManualApproval       
+  
+Mappings:
+  ImageMap:
+    AmazonLinux-2-64bit-x86-standard-2.0:
+      ImageName: aws/codebuild/amazonlinux2-x86_64-standard:2.0
+    AmazonLinux-2-64bit-x86-standard-3.0:
+      ImageName: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+    AmazonLinux-2-64bit-Arm-standard-1.0:
+      ImageName: aws/codebuild/amazonlinux2-aarch64-standard:1.0	
+    AmazonLinux-2-64bit-Arm-standard-2.0:
+      ImageName: aws/codebuild/amazonlinux2-aarch64-standard:2.0
+    Ubuntu-18.04:
+      ImageName: aws/codebuild/standard:4.0
+    Ubuntu-20.04:
+      ImageName: aws/codebuild/standard:4.0
+    Windows-Server-Core-2019:
+      ImageName: aws/codebuild/windows-base:2019-1.0
+  
+  SourceProviders:
+    GitHub:
+      Value: CodeStarSourceConnection
+    Bitbucket:
+      Value: CodeStarSourceConnection
+    CodeCommit:
+      Value: CodeCommit
+
+Parameters:
+  CustomerName:
+    Description: "Enter the Customer name"
+    Type: String
+  EnvironmentName:
+    Description: Enter Environment name
+    Type: String
+  CodeBuildProjectName:
+    Type: String
+    Description: Enter name of the CodeBuild project
+  ComputeType:
+    Description: The type of compute environment. This determines the number of CPU cores and memory the build environment uses
+    Type: String
+    AllowedValues:
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+      - BUILD_GENERAL1_2XLARGE
+  CodebuildDescription:
+    Description: A description that makes the build project easy to identify
+    Type: String 
+  BuildEnvironmentType:
+    Description: The type of build environment to use for related builds.
+    Type: String
+    AllowedValues:
+      - ARM_CONTAINER 
+      - LINUX_CONTAINER 
+      - LINUX_GPU_CONTAINER 
+      - WINDOWS_CONTAINER 
+      - WINDOWS_SERVER_2019_CONTAINER
+
+  CodeBuildDockerImage:
+    Type: String
+    Description: AWS CodeBuild manages the following Docker images that are available in the CodeBuild and AWS CodePipeline
+    AllowedValues:
+      - AmazonLinux-2-64bit-x86-standard-2.0
+      - AmazonLinux-2-64bit-x86-standard-3.0 
+      - AmazonLinux-2-64bit-Arm--standard-1.0
+      - AmazonLinux-2-64bit-Arm-standard-2.0
+      - Ubuntu-18.04
+      - Ubuntu-20.04
+      - Windows-Server-Core-2019
+  Privilegedmode:
+    Description: Set to true only if the build project is used to build Docker images.
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+    Default: false
+  LogTypes:
+    Description: A codebuild project can create logs in CloudWatch Logs, an S3 bucket or both
+    Type: String
+    AllowedValues:
+      - CloudWatch
+      - S3
+      - Both
+    Default: CloudWatch
+  Status:
+    Description: Whether to Enable or Disable logs
+    Type: String
+    AllowedValues: 
+      - ENABLED
+      - DISABLED
+    Default: ENABLED
+  Location:
+    Description: The ARN of an S3 bucket and the path prefix for S3 logs. Leave empty if logtype is cloudwatch only. If your Amazon S3 bucket name is my-bucket, and your path prefix is build-log, then acceptable formats are my-bucket/build-log or arn:aws:s3:::my-bucket/build-log
+    Type: String
+  # VPCID:
+  #   Description: Select the VPC ID
+  #   Type: AWS::EC2::VPC::Id
+
+  # AppSubnet1:
+  #   Description: Select Application Subnet1 ID
+  #   Type: AWS::EC2::Subnet::Id
+
+  # AppSubnet2:
+  #   Description: Select Application Subnet2 ID
+  #   Type: AWS::EC2::Subnet::Id 
+
+  CodeBuildServiceRole:
+    Type: String
+    Description: IAM role arn used by CodeBuildService
+    MinLength: 3
+    MaxLength: 100
+    ConstraintDescription: You must enter a CodeBuildService IAM role arn
+
+  BuildSpecDeploy:
+    Type: String
+    Description: Enter the buildspec.yml file name for Deployment
+    Default: buildspec.yml
+  
+  CodepipelineName:
+    Description: Enter the name for codepipeline
+    Type: String
+  CodepipelineRoleArn:
+    Description: Enter the role arn of codepipeline
+    Type: String
+  SourceProvider:
+    Type: String
+    Description: Please choose the Source Provider being used
+    AllowedValues:
+      - CodeCommit
+      - GitHub
+      - Bitbucket
+  BranchName:
+    Description: Enter the branch name of Git for which codepipeline should be triggered.
+    Type: String
+  CodeCommitRepo:
+    Description: Enter the code commit repo name. Leave empty if source provider is Github or Bitbucket.
+    Type: String
+  FullRepoName:
+    Description: Enter the github/bitbucket full repo name. Leave empty if source provider is codecommit.
+    Type: String
+  ConnectionArn:
+    Description: Enter the codestar connection Arn.
+    Type: String
+  ECRDockerRepository:
+    Description: Enter the ECR docker reposistory name
+    Type: String
+  EBStalkApplicationName:
+    Description: Enter the elasticbeanstalk application name.
+    Type: String
+  EBEnvironmentName:
+    Description: Enter the elasticbeanstalk environment name.
+    Type: String
+  ManualApproval:
+   Type: String
+   Description: Select true/false to specify whether to create ManualApprovalStage before Deployment or not
+   AllowedValues: 
+    - 'true'
+    - 'false'
+  
+
+Conditions:
+  IfLogstype: !Equals [!Ref LogTypes, Both]
+  Ifcloudwatch: 
+    !Or [!Equals [CloudWatch, !Ref LogTypes], Condition: IfLogstype]
+  IfS3: 
+    !Or [!Equals [S3, !Ref LogTypes], Condition: IfLogstype]
+  IsNotCodeCommit: !Not [!Equals [!Ref SourceProvider, "CodeCommit"]]
+  IsCodeCommit: !Equals [!Ref SourceProvider, "CodeCommit"]
+  ManualApproval: !Equals ['true', !Ref ManualApproval]
+
+
+
+Resources:
+  CodePipelineArtifactBucket:
+            Type: AWS::S3::Bucket
+            Properties:
+              BucketName: !Sub "${CustomerName}-${EnvironmentName}-${AWS::Region}-codepipeline-artifacts"
+              
+  CodePipelineArtifactBucketPolicy:
+            Type: AWS::S3::BucketPolicy
+            Properties:
+              Bucket: !Ref CodePipelineArtifactBucket
+              PolicyDocument:
+                Statement:
+                  -
+                    Action:
+                      - s3:*
+                    Effect: Allow
+                    Resource:
+                      - !Sub arn:aws:s3:::${CodePipelineArtifactBucket}
+                      - !Sub arn:aws:s3:::${CodePipelineArtifactBucket}/*
+                    Principal:
+                      Service: 
+                        - codepipeline.amazonaws.com
+                        - codebuild.amazonaws.com
+                        # - !Ref CodeBuildServiceRole
+                        # - !Ref CodepipelineRoleArn
+  
+  # CodebuildSG:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties: 
+  #     GroupName: !Sub "${CustomerName}-${EnvironmentName}-Codebuild-SecurityGroup"
+  #     GroupDescription: Codebuild security group
+  #     VpcId: !Ref VPCID 
+  #     Tags:
+  #     - Key: Name
+  #       Value: !Sub "${CustomerName}-${EnvironmentName}-Codebuild-SecurityGroup"
+
+
+  CodeBuildProjectDeploy:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      ConcurrentBuildLimit: 1
+      Description: !Ref CodebuildDescription
+      Source:
+        Type: CODEPIPELINE
+      Name: !Ref CodeBuildProjectName
+      Environment:
+        ComputeType: !Ref ComputeType
+        Type: !Ref BuildEnvironmentType
+        Image: !FindInMap [ ImageMap, !Ref CodeBuildDockerImage, ImageName ]
+        PrivilegedMode: !Ref Privilegedmode
+      LogsConfig:
+         CloudWatchLogs: 
+              Status: !If [Ifcloudwatch, !Ref Status, DISABLED]
+         S3Logs: 
+              Status: !If [IfS3, !Ref Status, DISABLED]
+              Location: !If [IfS3, !Ref Location, !Ref 'AWS::NoValue']
+      # VpcConfig:
+      #   SecurityGroupIds: 
+      #   - !GetAtt CodebuildSG.GroupId
+      #   Subnets:
+      #   - !Ref AppSubnet1 
+      #   - !Ref AppSubnet2
+      #   VpcId: !Ref VPCID
+      ServiceRole: !Ref CodeBuildServiceRole
+      Tags: 
+        - Key: Name
+          Value: !Sub "${CustomerName}-${EnvironmentName}-${CodeBuildProjectName}"
+        - Key: CustomerName
+          Value: !Ref CustomerName 
+  Codepipeline:   
+    Type: AWS::CodePipeline::Pipeline
+    Properties: 
+      ArtifactStore: 
+        Location: !Ref CodePipelineArtifactBucket
+        Type: S3
+      Name: !Ref CodepipelineName
+      RoleArn: !Ref CodepipelineRoleArn
+      Stages: 
+        - Name: Source
+          Actions:
+            - Name: Source-Github
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: !FindInMap [ SourceProviders, !Ref SourceProvider, Value]
+              Configuration: 
+                BranchName: !Ref BranchName
+                OutputArtifactFormat: CODE_ZIP
+                PollForSourceChanges: !If [IsCodeCommit, 'false', !Ref "AWS::NoValue"]
+                RepositoryName: !If [IsCodeCommit, !Ref CodeCommitRepo, !Ref "AWS::NoValue"]
+                FullRepositoryId: !If [IsNotCodeCommit, !Ref FullRepoName, !Ref "AWS::NoValue"]
+                ConnectionArn: !If [IsNotCodeCommit, !Ref ConnectionArn, !Ref "AWS::NoValue"]
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+        - !If
+          - ManualApproval
+          - Name: Approval
+            Actions:
+              - Name: Approval-for-Build
+                ActionTypeId:
+                  Category: Approval
+                  Owner: AWS
+                  Version: 1
+                  Provider: Manual
+                # Configuration:
+                #   NotificationArn: !Sub "${SNSTopicarn}-mail"
+                    
+          - !Ref AWS::NoValue
+        
+        
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildProjectDeploy
+                EnvironmentVariables: !Sub '[{"name":"REPOSITORY_NAME","value": "${FullRepoName}","type":"PLAINTEXT"},
+                                             {"name":"REPOSITORY_BRANCH","value": "${BranchName}","type":"PLAINTEXT"}]' 
+                                            #  {"name":"REPOSITORY_URI","value": "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRDockerRepository}","type":"PLAINTEXT"}]'
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+        
+        # - !If
+        #   - DeployStage
+        #   - Name: Deploy      
+        #     Actions:
+        #       - Name: Deploy
+        #         ActionTypeId:
+        #           Category: Deploy
+        #           Owner: AWS
+        #           Version: 1
+        #           Provider: ECS
+        #         Configuration:
+        #           ClusterName: !Ref Cluster
+        #           ServiceName: !Ref Service
+        #           FileName: imagedefinitions.json
+        #         InputArtifacts:
+        #           - Name: !Sub "${CustomerName}-codebuild-output"
+        #         RunOrder: 1
+        #   - !Ref AWS::NoValue
+
+        
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: ElasticBeanstalk
+              Configuration:
+                ApplicationName: !Ref EBStalkApplicationName
+                EnvironmentName: !Ref EBEnvironmentName
+              InputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1       
+      Tags: 
+        - Key: Name
+          Value: !Sub "${CustomerName}-${EnvironmentName}-${CodepipelineName}"
+        - Key: CustomerName
+          Value: !Ref CustomerName

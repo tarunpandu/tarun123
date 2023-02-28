@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CF Template for creating the CodeBuild Project for the Codepipeline
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General Stack Details
+        Parameters:
+        - CustomerName
+        - EnvironmentName
+      - Label:
+          default: VPC
+        Parameters:
+          - VPCID
+          - AppSubnet1
+          - AppSubnet2
+      - Label:
+          default: Codebuild Details
+        Parameters:
+          - CodeBuildProjectName
+          - CodebuildDescription
+          - ComputeType
+          - BuildEnvironmentType
+          - CodeBuildDockerImage
+          - Privilegedmode
+          - LogTypes
+          - Status
+          - Location
+          - BuildSpecDeploy
+          - CodeBuildServiceRole
+Mappings:
+  ImageMap:
+    AmazonLinux-2-64bit-x86-standard-2.0:
+      ImageName: aws/codebuild/amazonlinux2-x86_64-standard:2.0
+    AmazonLinux-2-64bit-x86-standard-3.0:
+      ImageName: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+    AmazonLinux-2-64bit-Arm-standard-1.0:
+      ImageName: aws/codebuild/amazonlinux2-aarch64-standard:1.0	
+    AmazonLinux-2-64bit-Arm-standard-2.0:
+      ImageName: aws/codebuild/amazonlinux2-aarch64-standard:2.0
+    Ubuntu-18.04:
+      ImageName: aws/codebuild/standard:4.0
+    Ubuntu-20.04:
+      ImageName: aws/codebuild/standard:4.0
+    Windows-Server-Core-2019:
+      ImageName: aws/codebuild/windows-base:2019-1.0
+
+
+Parameters:
+  CustomerName:
+    Description: "Enter the Customer name"
+    Type: String
+  EnvironmentName:
+    Description: Enter Environment name
+    Type: String
+  CodeBuildProjectName:
+    Type: String
+    Description: Enter name of the CodeBuild project
+  ComputeType:
+    Description: The type of compute environment. This determines the number of CPU cores and memory the build environment uses
+    Type: String
+    AllowedValues:
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+      - BUILD_GENERAL1_2XLARGE
+  CodebuildDescription:
+    Description: A description that makes the build project easy to identify
+    Type: String 
+  BuildEnvironmentType:
+    Description: The type of build environment to use for related builds.
+    Type: String
+    AllowedValues:
+      - ARM_CONTAINER 
+      - LINUX_CONTAINER 
+      - LINUX_GPU_CONTAINER 
+      - WINDOWS_CONTAINER 
+      - WINDOWS_SERVER_2019_CONTAINER
+
+  CodeBuildDockerImage:
+    Type: String
+    Description: AWS CodeBuild manages the following Docker images that are available in the CodeBuild and AWS CodePipeline
+    AllowedValues:
+      - AmazonLinux-2-64bit-x86-standard-2.0
+      - AmazonLinux-2-64bit-x86-standard-3.0 
+      - AmazonLinux-2-64bit-Arm--standard-1.0
+      - AmazonLinux-2-64bit-Arm-standard-2.0
+      - Ubuntu-18.04
+      - Ubuntu-20.04
+      - Windows-Server-Core-2019
+  Privilegedmode:
+    Description: Set to true only if the build project is used to build Docker images.
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+    Default: false
+  LogTypes:
+    Description: A codebuild project can create logs in CloudWatch Logs, an S3 bucket or both
+    Type: String
+    AllowedValues:
+      - CloudWatch
+      - S3
+      - Both
+    Default: CloudWatch
+  Status:
+    Description: Whether to Enable or Disable logs
+    Type: String
+    AllowedValues: 
+      - ENABLED
+      - DISABLED
+    Default: ENABLED
+  Location:
+    Description: The ARN of an S3 bucket and the path prefix for S3 logs. Leave empty if logtype is cloudwatch only. If your Amazon S3 bucket name is my-bucket, and your path prefix is build-log, then acceptable formats are my-bucket/build-log or arn:aws:s3:::my-bucket/build-log
+    Type: String
+  VPCID:
+    Description: Select the VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  AppSubnet1:
+    Description: Select Application Subnet1 ID
+    Type: AWS::EC2::Subnet::Id
+
+  AppSubnet2:
+    Description: Select Application Subnet2 ID
+    Type: AWS::EC2::Subnet::Id 
+
+  CodeBuildServiceRole:
+    Type: String
+    Description: IAM role used by CodeBuildService
+    MinLength: 3
+    MaxLength: 100
+    ConstraintDescription: You must enter a CodeBuildService IAM role arn
+
+  BuildSpecDeploy:
+    Type: String
+    Description: Enter the buildspec.yml file name for Deployment
+    Default: buildpec.yml
+
+Conditions:
+  IfLogstype: !Equals [!Ref LogTypes, Both]
+  Ifcloudwatch: 
+    !Or [!Equals [CloudWatch, !Ref LogTypes], Condition: IfLogstype]
+  IfS3: 
+    !Or [!Equals [S3, !Ref LogTypes], Condition: IfLogstype]
+
+Resources:
+  CodebuildSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: !Sub "${CustomerName}-${EnvironmentName}-Codebuild-SecurityGroup"
+      GroupDescription: Codebuild security group
+      VpcId: !Ref VPCID 
+      Tags:
+      - Key: Name
+        Value: !Sub "${CustomerName}-${EnvironmentName}-Codebuild-SecurityGroup"
+
+
+  CodeBuildProjectDeploy:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      ConcurrentBuildLimit: 2
+      Description: !Ref CodebuildDescription
+      Source:
+        Type: CODEPIPELINE
+      Name: !Ref CodeBuildProjectName
+      Environment:
+        ComputeType: !Ref ComputeType
+        Type: !Ref BuildEnvironmentType
+        Image: !FindInMap [ ImageMap, !Ref CodeBuildDockerImage, ImageName ]
+        PrivilegedMode: !Ref Privilegedmode
+      LogsConfig:
+         CloudWatchLogs: 
+              Status: !If [Ifcloudwatch, !Ref Status, DISABLED]
+         S3Logs: 
+              Status: !If [IfS3, !Ref Status, DISABLED]
+              Location: !If [IfS3, !Ref Location, !Ref 'AWS::NoValue']
+      VpcConfig:
+        SecurityGroupIds: 
+        - !GetAtt CodebuildSG.GroupId
+        Subnets:
+        - !Ref AppSubnet1 
+        - !Ref AppSubnet2
+        VpcId: !Ref VPCID
+      ServiceRole: !Ref CodeBuildServiceRole
+      Tags: 
+        - Key: Name
+          Value: !Sub "${CustomerName}-${EnvironmentName}-${CodeBuildProjectName}"
+        - Key: CustomerName
+          Value: !Ref CustomerName
